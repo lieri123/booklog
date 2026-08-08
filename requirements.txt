@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+asyncpg
+pydantic[email]
+argon2-cffi
+pyjwt
+httpx
+pytest
+pytest-asyncio

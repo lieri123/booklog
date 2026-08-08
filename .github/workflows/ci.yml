@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: booktracker
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: booktracker
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U booktracker"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://booktracker:devpassword@localhost:5432/booktracker
+      JWT_SECRET: ci-secret
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Apply schema
+        run: python main.py --migrate
+
+      - name: Tests
+        run: pytest -q
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t booklog:${{ github.sha }} .
+      - name: Report image size
+        run: docker images booklog:${{ github.sha }} --format "{{.Size}}"
