@@ -41,9 +41,9 @@ resource "random_id" "suffix" {
 resource "aws_s3_bucket" "state" {
   bucket = "booklog-tfstate-${random_id.suffix.hex}"
 
-  # lifecycle {
-  #   prevent_destroy = true
-  # }
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 

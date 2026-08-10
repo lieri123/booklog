@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: ca-central-1
   ECS_CLUSTER: booklog-dev
   ECS_SERVICE: booklog-dev
   TASK_FAMILY: booklog-dev

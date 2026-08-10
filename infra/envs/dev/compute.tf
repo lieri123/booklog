@@ -84,7 +84,7 @@ resource "aws_lb_target_group" "app" {
     matcher             = "200"
   }
 
-  deregister_delay = 30
+  deregistration_delay  = 30
 
   lifecycle {
     create_before_destroy = true

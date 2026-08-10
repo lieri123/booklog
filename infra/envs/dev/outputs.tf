@@ -34,3 +34,33 @@ output "db_secret_arn" {
   EOT
   value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }
+
+output "alb_url" {
+  description = "Public URL of the service. Try /healthz and /docs."
+  value       = "http://${aws_lb.main.dns_name}"
+}
+
+output "ecr_repository_url" {
+  description = "Push images here. Used by the deploy workflow."
+  value       = aws_ecr_repository.app.repository_url
+}
+
+output "ecs_cluster_name" {
+  value = aws_ecs_cluster.main.name
+}
+
+output "ecs_service_name" {
+  value = aws_ecs_service.app.name
+}
+
+output "task_definition_family" {
+  value = aws_ecs_task_definition.app.family
+}
+
+output "github_actions_role_arn" {
+  description = <<-EOT
+    Add as the AWS_ROLE_ARN repository variable in GitHub. Empty if
+    github_repo was not set.
+  EOT
+  value       = try(aws_iam_role.github_actions[0].arn, "")
+}

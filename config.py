@@ -1,8 +1,26 @@
 import os
+from urllib.parse import quote_plus
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://booktracker:devpassword@localhost:5433/booktracker"
-)
+
+def _database_url() -> str:
+    """DATABASE_URL wins if set (local dev, CI, docker compose).
+    """
+    explicit = os.getenv("DATABASE_URL")
+    if explicit:
+        return explicit
+
+    host = os.getenv("DB_HOST")
+    if not host:
+        return "postgresql://booktracker:devpassword@localhost:5433/booktracker"
+
+    user = os.getenv("DB_USER", "booktracker")
+    password = quote_plus(os.getenv("DB_PASSWORD", ""))
+    port = os.getenv("DB_PORT", "5432")
+    name = os.getenv("DB_NAME", "booktracker")
+    return f"postgresql://{user}:{password}@{host}:{port}/{name}"
+
+
+DATABASE_URL = _database_url()
 
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-only-secret-change-me")
 JWT_ALGORITHM = "HS256"

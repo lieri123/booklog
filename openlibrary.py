@@ -1,4 +1,9 @@
 """Open Library client.
+
+Two things this exists to protect against: the default search response is
+enormous (always pass `fields`), and Open Library goes slow sometimes (hard
+timeout, and callers treat failure as degraded search rather than a 500).
+In phase 5 this moves off the request path entirely, onto SQS.
 """
 
 import logging

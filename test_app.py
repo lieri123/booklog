@@ -64,7 +64,10 @@ async def login_as(client, email: str, password: str = "correcthorse1") -> dict:
 async def auth(client):
     return await login_as(client, "alice@example.com")
 
+
+# --------------------------------------------------------------------------
 # ops
+# --------------------------------------------------------------------------
 
 async def test_healthz(client):
     assert (await client.get("/healthz")).status_code == 200
@@ -73,7 +76,10 @@ async def test_healthz(client):
 async def test_readyz(client):
     assert (await client.get("/readyz")).status_code == 200
 
+
+# --------------------------------------------------------------------------
 # auth
+# --------------------------------------------------------------------------
 
 async def test_register(client):
     r = await client.post("/register",
@@ -94,6 +100,7 @@ async def test_email_is_case_insensitive(client):
                                          "password": "correcthorse1"})
     r = await client.post("/register", json={"email": "bob@example.com",
                                              "password": "correcthorse1"})
+    # citext. Without the extension you'd get two accounts for one human.
     assert r.status_code == 409
 
 
@@ -110,6 +117,7 @@ async def test_unknown_email_same_response_as_wrong_password(client):
                                           "password": "wrongpassword"})
     b = await client.post("/login", json={"email": "nobody@example.com",
                                           "password": "correcthorse1"})
+    # Identical, so login can't be used to enumerate accounts.
     assert a.status_code == b.status_code == 401
     assert a.json() == b.json()
 
@@ -130,7 +138,9 @@ async def test_forged_token_rejected(client):
     assert r.status_code == 401
 
 
+# --------------------------------------------------------------------------
 # library
+# --------------------------------------------------------------------------
 
 async def test_add_book(client, auth):
     r = await client.post("/library", json=DUNE, headers=auth)
@@ -138,6 +148,7 @@ async def test_add_book(client, auth):
     body = r.json()
     assert body["book"]["title"] == "Dune"
     assert body["status"] == "want_to_read"
+    # Without ?default=false a missing cover returns a blank JPEG with a 200.
     assert "default=false" in body["book"]["cover_url"]
 
 
@@ -162,6 +173,7 @@ async def test_other_user_cannot_touch_entry(client):
     bob = await login_as(client, "b@x.com")
     eid = (await client.post("/library", json=DUNE, headers=alice)).json()["id"]
 
+    # 404 not 403 — a 403 confirms the entry exists.
     assert (await client.get(f"/library/{eid}", headers=bob)).status_code == 404
     assert (await client.patch(f"/library/{eid}", json={"rating": 1},
                                headers=bob)).status_code == 404
@@ -182,6 +194,7 @@ async def test_started_at_set_once(client, auth):
                        json={"status": "finished"}, headers=auth)
     r3 = await client.patch(f"/library/{eid}/status",
                             json={"status": "reading"}, headers=auth)
+    # Re-reading must not erase when you first started.
     assert r3.json()["started_at"] == first
 
 
@@ -217,7 +230,10 @@ async def test_delete_entry(client, auth):
     assert (await client.delete(f"/library/{eid}", headers=auth)).status_code == 204
     assert (await client.get(f"/library/{eid}", headers=auth)).status_code == 404
 
+
+# --------------------------------------------------------------------------
 # stats
+# --------------------------------------------------------------------------
 
 async def test_backlog_stats(client, auth):
     await client.post("/library", json=DUNE, headers=auth)   # 604
