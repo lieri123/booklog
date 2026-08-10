@@ -53,9 +53,12 @@ resource "aws_iam_role" "ecs_task" {
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.github_repo == "" ? 0 : 1
 
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+  thumbprint_list = [
+    "6938fd4d98bab03faadb97b34396831e3780aea1",
+    "1c58a3a8518e8759bf075b76b750d4f2df264fcd",
+  ]
 }
 
 data "aws_iam_policy_document" "github_assume" {
@@ -86,7 +89,10 @@ data "aws_iam_policy_document" "github_assume" {
 resource "aws_iam_role" "github_actions" {
   count = var.github_repo == "" ? 0 : 1
 
-  name_prefix        = "${local.name}-gha-"
+  # Fixed name, not name_prefix: the ARN must stay stable across
+  # rebuilds, otherwise the AWS_ROLE_ARN variable in GitHub has to be
+  # updated after every destroy/apply cycle.
+  name               = "${local.name}-gha"
   assume_role_policy = data.aws_iam_policy_document.github_assume[0].json
 }
 
@@ -132,6 +138,7 @@ data "aws_iam_policy_document" "deploy" {
   }
 }
 
+# Attaches the deploy permissions above to the GitHub Actions role. Without
 resource "aws_iam_role_policy" "github_actions" {
   count = var.github_repo == "" ? 0 : 1
 
