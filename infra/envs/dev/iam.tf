@@ -92,7 +92,7 @@ resource "aws_iam_role" "github_actions" {
   # Fixed name, not name_prefix: the ARN must stay stable across
   # rebuilds, otherwise the AWS_ROLE_ARN variable in GitHub has to be
   # updated after every destroy/apply cycle.
-  name               = "${local.name}-gha"
+  name               = "${local.name}-deployer"
   assume_role_policy = data.aws_iam_policy_document.github_assume[0].json
 }
 
