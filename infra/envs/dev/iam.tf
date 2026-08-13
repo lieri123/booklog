@@ -136,6 +136,18 @@ data "aws_iam_policy_document" "deploy" {
       aws_iam_role.ecs_task.arn,
     ]
   }
+  statement {
+    actions = [
+      "ec2:DescribeSubnets",
+      "ec2:DescribeSecurityGroups",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    actions   = ["elasticloadbalancing:DescribeLoadBalancers"]
+    resources = ["*"]
+  }
 }
 
 # Attaches the deploy permissions above to the GitHub Actions role. Without
