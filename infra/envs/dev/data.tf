@@ -33,7 +33,7 @@ resource "aws_db_instance" "main" {
   vpc_security_group_ids = [aws_security_group.db.id]
   publicly_accessible    = false
 
- 
+
   multi_az = false
 
   backup_retention_period = 1

@@ -64,3 +64,33 @@ output "github_actions_role_arn" {
   EOT
   value       = try(aws_iam_role.github_actions[0].arn, "")
 }
+
+output "dashboard_url" {
+  description = "CloudWatch dashboard. Open this before starting a load test."
+  value       = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards:name=${aws_cloudwatch_dashboard.main.dashboard_name}"
+}
+
+output "alerts_topic_arn" {
+  description = "SNS topic the alarms publish to."
+  value       = aws_sns_topic.alerts.arn
+}
+
+output "log_group_name" {
+  description = "Application log group. `aws logs tail <this> --follow`."
+  value       = aws_cloudwatch_log_group.app.name
+}
+
+output "alarm_names" {
+  description = "Every alarm, for scripted state checks during a load test."
+  value = [
+    aws_cloudwatch_metric_alarm.alb_target_5xx.alarm_name,
+    aws_cloudwatch_metric_alarm.alb_elb_5xx.alarm_name,
+    aws_cloudwatch_metric_alarm.alb_latency.alarm_name,
+    aws_cloudwatch_metric_alarm.unhealthy_targets.alarm_name,
+    aws_cloudwatch_metric_alarm.rds_connections.alarm_name,
+    aws_cloudwatch_metric_alarm.rds_cpu.alarm_name,
+    aws_cloudwatch_metric_alarm.rds_cpu_credits.alarm_name,
+    aws_cloudwatch_metric_alarm.rds_storage.alarm_name,
+    aws_cloudwatch_metric_alarm.app_errors.alarm_name,
+  ]
+}
