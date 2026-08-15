@@ -52,7 +52,7 @@ variable "github_repo" {
     before you've pushed the repo anywhere.
   EOT
   type        = string
-  default     = ""
+  default     = "lieri123/booklog"
 }
 
 variable "image_tag" {
