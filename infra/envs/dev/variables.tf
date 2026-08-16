@@ -86,7 +86,7 @@ variable "desired_count" {
 variable "alert_email" {
   description = <<-EOT
     Email address for alarm notifications. AWS sends a confirmation link that
-    you must click before anything is delivered - until then the subscription
+    must be clicked before anything is delivered - until then the subscription
     reads "Pending confirmation" and alarms fire silently. Leave empty to
     create the SNS topic without a subscriber.
   EOT
