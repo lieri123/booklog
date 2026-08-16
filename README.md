@@ -1,7 +1,8 @@
 # Book backlog tracker
 
-FastAPI service tracking a reading backlog, backed by Postgres. Deploys to
-AWS ECS Fargate in later phases.
+FastAPI service tracking a reading backlog, backed by Postgres. Runs on AWS
+ECS Fargate behind an ALB, with RDS in private subnets — all provisioned by
+Terraform, deployed by GitHub Actions via OIDC.
 
 ## Setup
 
@@ -64,7 +65,7 @@ project.
 ## Roadmap
 
 - [x] Phase 1 — service, schema, tests, Docker, CI
-- [ ] Phase 2 — VPC, subnets, RDS in private subnets (Terraform)
-- [ ] Phase 3 — ECR, ECS Fargate, ALB, GitHub Actions deploy via OIDC
-- [ ] Phase 4 — CloudWatch dashboards, alarms, autoscaling, k6 load test
+- [x] Phase 2 — VPC, subnets, RDS in private subnets (Terraform)
+- [x] Phase 3 — ECR, ECS Fargate, ALB, GitHub Actions deploy via OIDC
+- [x] Phase 4 — CloudWatch dashboards, alarms, autoscaling, k6 load test
 - [ ] Phase 5 — SQS enrichment worker, S3 cover cache, DLQ
