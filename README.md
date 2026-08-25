@@ -56,8 +56,10 @@ than fetching and comparing in Python.
 
 **Constraints, not application checks.** Registration catches
 `UniqueViolationError`; `upsert_book` uses `ON CONFLICT`. A check-then-insert
-has a race window. This matters in phase 5: SQS delivers at-least-once, so
-the same enrichment message will be processed twice.
+has a race window. It also makes the enrichment path idempotent for free: a
+queue consumer can process the same message twice without producing a
+duplicate row, because the guarantee lives in the schema rather than in the
+caller.
 
 **Raw SQL, no ORM.** The stats queries are the interesting part of this
 project.
@@ -68,4 +70,18 @@ project.
 - [x] Phase 2 — VPC, subnets, RDS in private subnets (Terraform)
 - [x] Phase 3 — ECR, ECS Fargate, ALB, GitHub Actions deploy via OIDC
 - [x] Phase 4 — CloudWatch dashboards, alarms, autoscaling, k6 load test
-- [ ] Phase 5 — SQS enrichment worker, S3 cover cache, DLQ
+
+Phase 5, an SQS enrichment worker with a DLQ, was scoped and then not built. The
+only thing it would remove from the request path is the synchronous Open Library
+call on `POST /library`, and at this traffic level that is a latency cost the
+load test does not show. The schema already accommodates it: `upsert_book` uses
+`ON CONFLICT`, so an at-least-once consumer needs no extra deduplication.
+
+## Documentation
+
+| | |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | Topology, request path, deploy path |
+| [`docs/decisions.md`](docs/decisions.md) | Infrastructure and operational ADRs |
+| [`docs/load-test.md`](docs/load-test.md) | k6 methodology, results, and the confound that invalidated the first run |
+| [`docs/runbook.md`](docs/runbook.md) | What each alarm means and what to check first |

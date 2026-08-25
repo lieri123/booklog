@@ -76,6 +76,32 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
 }
 
 
+# Versioning is on so a corrupted state file can be rolled back, but every
+# apply writes a new version and nothing removes the old ones. Ninety days is
+# far longer than any realistic rollback and stops the bucket growing without
+# limit.
+resource "aws_s3_bucket_lifecycle_configuration" "state" {
+  bucket = aws_s3_bucket.state.id
+
+  rule {
+    id     = "expire-noncurrent-state-versions"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.state]
+}
+
+
 resource "aws_dynamodb_table" "locks" {
   name         = "booklog-tf-locks"
   billing_mode = "PAY_PER_REQUEST"
@@ -84,6 +110,12 @@ resource "aws_dynamodb_table" "locks" {
   attribute {
     name = "LockID"
     type = "S"
+  }
+
+  # Same protection as the bucket. Losing the lock table does not lose state,
+  # but it does mean the next apply runs without locking and can corrupt it.
+  lifecycle {
+    prevent_destroy = true
   }
 }
 

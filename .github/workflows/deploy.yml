@@ -62,11 +62,28 @@ jobs:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Check stack is up
+        id: guard
+        run: |
+          # The dev stack is destroyed between working sessions to control
+          # cost. A push while it is down should skip the deploy rather than
+          # fail it. A workflow that is red on every commit stops carrying
+          # any signal.
+          if aws ecr describe-repositories --repository-names booklog-dev \
+               --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "up=true" >> $GITHUB_OUTPUT
+          else
+            echo "up=false" >> $GITHUB_OUTPUT
+            echo "::notice title=Deploy skipped::ECR repository booklog-dev not found, so the infrastructure is torn down. Run 'tofu apply' and re-run this workflow to deploy."
+          fi
+
       - name: Log in to ECR
         id: ecr
+        if: steps.guard.outputs.up == 'true'
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push
+        if: steps.guard.outputs.up == 'true'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           REPOSITORY: booklog-dev
@@ -78,6 +95,7 @@ jobs:
 
       - name: Render task definition
         id: taskdef
+        if: steps.guard.outputs.up == 'true'
         run: |
           aws ecs describe-task-definition \
             --task-definition ${{ env.TASK_FAMILY }} \
@@ -95,6 +113,7 @@ jobs:
           echo "arn=$ARN" >> $GITHUB_OUTPUT
 
       - name: Run migrations
+        if: steps.guard.outputs.up == 'true'
         run: |
           SUBNETS=$(aws ec2 describe-subnets \
             --filters "Name=tag:Name,Values=booklog-dev-private-*" \
@@ -119,6 +138,7 @@ jobs:
           [ "$EXIT" = "0" ] || exit 1
 
       - name: Deploy
+        if: steps.guard.outputs.up == 'true'
         run: |
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
@@ -127,12 +147,14 @@ jobs:
             --query "service.serviceName" --output text
 
       - name: Wait for stability
+        if: steps.guard.outputs.up == 'true'
         run: |
           aws ecs wait services-stable \
             --cluster ${{ env.ECS_CLUSTER }} \
             --services ${{ env.ECS_SERVICE }}
 
       - name: Smoke test
+        if: steps.guard.outputs.up == 'true'
         run: |
           ALB=$(aws elbv2 describe-load-balancers \
             --query "LoadBalancers[?starts_with(LoadBalancerName, 'bklog-')].DNSName | [0]" \
