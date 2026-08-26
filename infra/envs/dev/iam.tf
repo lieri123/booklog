@@ -104,10 +104,11 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["*"] # This action does not support resource scoping.
   }
 
-  statement {
+    statement {
     actions = [
       "ecr:BatchCheckLayerAvailability",
       "ecr:CompleteLayerUpload",
+      "ecr:DescribeRepositories",
       "ecr:InitiateLayerUpload",
       "ecr:PutImage",
       "ecr:UploadLayerPart",
