@@ -1,11 +1,5 @@
 # Load testing
 
-<!--
-TK markers are placeholders for numbers to paste from k6 summary output before
-publishing. Everything not marked TK is a number this project produced. Search
-for "TK" to find them all, and delete this comment afterwards.
--->
-
 Script: `loadtest/load.js`. Run against a live stack with:
 
 ```powershell
@@ -86,20 +80,46 @@ measured window.
 | `GET /stats`   | 22.78 ms | 61.69 ms | 280.46 ms |
 | Write          | 21.43 ms | 60.76 ms | 261.25 ms |
 
-`db_connection_errors`: TK. Error rate: TK. VUs reached: TK.
+`db_connection_errors`: 0. Error rate: 0.00%, 0 failures out of 62,184 requests.
+VUs reached: 100 of 100, with 15,546 iterations completed and none interrupted.
+Throughput held at 122.9 requests per second.
 
-CloudWatch over the same window: ALB `TargetResponseTime` p95 of TK, RDS
-`DatabaseConnections` peaking at TK, ECS service CPU at TK%. The ALB figure
-should track the k6 numbers within a few milliseconds. A large gap would mean
-time is being spent between the load generator and the target rather than inside
-the application.
+The CloudWatch cross-check for this window was not captured before the stack was
+torn down, so the k6 figures here are unconfirmed against server-side metrics.
+The check worth running is ALB `TargetResponseTime` p95 against the k6
+percentiles: the two should agree within a few milliseconds, and a large gap
+would mean time is being spent between the load generator and the target rather
+than inside the application.
 
 ## The autoscaling result
 
 The obvious response to a saturated service is more tasks.
-`autoscaling_max_capacity` went from 6 to TK and the test was re-run.
+`autoscaling_max_capacity` went from 6 to 10 and the test was re-run against an
+otherwise identical stack under the identical 100 VU profile.
 
-Latency got worse. TK
+Every percentile got worse, and the service began failing requests it had not
+failed before.
+
+| | max 6 | max 10 |
+|---|---|---|
+| `GET /library` p95 | 38.03 ms | 100.04 ms |
+| `GET /stats` p95 | 61.69 ms | 133.98 ms |
+| Write p95 | 60.76 ms | 197.92 ms |
+| `GET /library` p99 | 233.94 ms | 950.22 ms |
+| Error rate | 0.00% | 1.72% |
+| Throughput | 122.9 req/s | 117.5 req/s |
+
+Throughput fell while task count rose. More capacity produced less work.
+
+One number appears to contradict the diagnosis: `db_connection_errors` reads 0
+in both runs. It is not a contradiction. asyncpg's pool does not raise when it
+is exhausted — `acquire()` waits for a free connection. Pool pressure therefore
+surfaces as latency, and only becomes a visible failure once something upstream
+stops waiting. That is the shape of the run 3 data. Failures are spread evenly
+across all three endpoints (280, 230 and 271 checks failed), and successful
+requests hold a p95 of 67 ms against an overall p95 of 131 ms. The errors are
+the slow tail of one distribution, not a second failure mode. A metric named
+for connection errors will read zero through the entire event.
 
 The arithmetic explains it. Each task opens an asyncpg pool with
 `POOL_MAX_SIZE = 10`. A `db.t4g.micro` has 1 GB of memory, which puts Postgres'
