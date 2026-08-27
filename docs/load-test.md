@@ -84,6 +84,9 @@ measured window.
 VUs reached: 100 of 100, with 15,546 iterations completed and none interrupted.
 Throughput held at 122.9 requests per second.
 
+Raw k6 summaries for both runs are in
+[`loadtest/results/`](../loadtest/results/).
+
 The CloudWatch cross-check for this window was not captured before the stack was
 torn down, so the k6 figures here are unconfirmed against server-side metrics.
 The check worth running is ALB `TargetResponseTime` p95 against the k6

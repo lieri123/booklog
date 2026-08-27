@@ -190,6 +190,14 @@ workflow now checks whether the ECR repository exists and exits the job cleanly
 if it does not, so a torn-down stack produces a skipped deploy instead of a red
 badge.
 
+The first version of that guard discarded the CLI output and treated any
+non-zero exit as a torn-down stack. That is the wrong test. `AccessDenied` from
+an expired OIDC trust policy exits non-zero too, and would have been reported as
+a clean skip on every push indefinitely. The guard now matches
+`RepositoryNotFoundException` specifically and fails loudly on anything else. A
+guard that cannot distinguish absence from failure converts every failure into
+absence.
+
 ---
 
 ## 10. Retention limits everywhere, and a sweep script for what escapes them
