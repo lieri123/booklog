@@ -82,9 +82,9 @@ measured window.
 
 | Metric | p50 | p95 | p99 |
 |---|---|---|---|
-| `GET /library` | TK | TK | TK |
-| `GET /stats` | TK | TK | TK |
-| Write | TK | TK | TK |
+| `GET /library` | 17.84 ms | 38.03 ms | 233.94 ms |
+| `GET /stats`   | 22.78 ms | 61.69 ms | 280.46 ms |
+| Write          | 21.43 ms | 60.76 ms | 261.25 ms |
 
 `db_connection_errors`: TK. Error rate: TK. VUs reached: TK.
 
