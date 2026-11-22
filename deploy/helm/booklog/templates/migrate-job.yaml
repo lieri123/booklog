@@ -1,0 +1,95 @@
+{{- if .Values.migrations.enabled }}
+{{- $asHook := not .Values.devPostgres.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  {{- if $asHook }}
+  name: {{ include "booklog.fullname" . }}-migrate
+  {{- else }}
+  name: {{ include "booklog.fullname" . }}-migrate-{{ .Release.Revision }}
+  {{- end }}
+  labels:
+    {{- include "booklog.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  {{- if $asHook }}
+  annotations:
+    # Migrations run before any pod is replaced, which is the property the ECS
+    # pipeline had: a failed migration fails the release with the previous
+    # version still serving. Pair with `helm upgrade --atomic --wait`.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migrations.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "booklog.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "booklog.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: {{ include "booklog.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              i=0
+              until python -c "import socket,os,sys; socket.create_connection((os.environ['DB_HOST'], int(os.environ['DB_PORT'])), 3).close()" 2>/dev/null; do
+                i=$((i+1))
+                if [ $i -ge 60 ]; then
+                  echo "ERROR database $DB_HOST:$DB_PORT unreachable after 120s" >&2
+                  exit 1
+                fi
+                echo "waiting for $DB_HOST:$DB_PORT ($i)"
+                sleep 2
+              done
+              exec python main.py --migrate
+          env:
+            # Migrations go straight to Postgres, never through pgbouncer:
+            # DDL and session-scoped statements do not belong in a transaction
+            # pooler.
+            - name: DB_HOST
+              value: {{ include "booklog.postgresHost" . | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "booklog.secretName" . }}
+                  key: {{ .Values.database.secretKeys.password }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "booklog.secretName" . }}
+                  key: {{ .Values.database.secretKeys.jwtSecret }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+{{- end }}

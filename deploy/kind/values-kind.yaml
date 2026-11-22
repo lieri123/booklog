@@ -1,0 +1,27 @@
+# Local overrides for kind. Everything else comes from the chart defaults, so
+# a local run exercises the same manifests as EKS.
+
+image:
+  repository: booklog
+  tag: local
+  # The image is side-loaded with `kind load docker-image`, so never try a
+  # registry pull: it would fail and the pod would sit in ImagePullBackOff.
+  pullPolicy: Never
+
+devPostgres:
+  enabled: true
+
+service:
+  type: NodePort
+  nodePort: 30080
+
+# Single-zone cluster in practice, so don't let the spread constraint block
+# scheduling; up.sh still labels the workers so you can watch it try.
+topologySpread:
+  enabled: true
+  whenUnsatisfiable: ScheduleAnyway
+
+# kindnet does not enforce NetworkPolicy. Leaving this on would give the
+# false impression that the security-group chain is being tested.
+networkPolicy:
+  enabled: false

@@ -1,0 +1,265 @@
+# Booklog chart values.
+#
+# The defaults reproduce the ECS Fargate deployment this chart replaces:
+# 2 replicas minimum, 0.25 vCPU and 512 MiB per pod, autoscaling to 6 on 60%
+# average CPU, scale out fast and scale in slow.
+#
+# Read `connectionBudget` before raising `autoscaling.maxReplicas`. The load
+# test in docs/load-test.md established that this application is bound by
+# Postgres connections, not CPU, and that scaling past the connection budget
+# makes every percentile worse while reducing throughput.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: booklog
+  # Defaults to .Chart.AppVersion when empty. The deploy pipeline sets the
+  # commit SHA, exactly as it does for the ECS task definition.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 2
+
+serviceAccount:
+  create: true
+  name: ""
+  # On EKS, set this to an IRSA role ARN if the app ever needs an AWS API.
+  # It needs none today: the ECS task role is empty for the same reason.
+  annotations: {}
+
+app:
+  port: 8080
+  # Mirrors config.py. POOL_MAX_SIZE is the number that drives the
+  # connection budget below - it is per pod, not per cluster.
+  poolMinSize: 2
+  poolMaxSize: 10
+  pagesPerHour: 40
+  jwtExpireMinutes: 10080
+  # Extra env vars, if you need them without editing the chart.
+  extraEnv: []
+
+database:
+  # Leave host empty to use the in-cluster dev Postgres below.
+  host: ""
+  port: 5432
+  name: booktracker
+  user: booktracker
+
+  # Credentials. Two supported shapes:
+  #  1. existingSecret - the normal case. On EKS, have External Secrets or the
+  #     Secrets Store CSI driver project the RDS master secret into it, so the
+  #     password is never in a values file or in Helm's release secret.
+  #  2. password / jwtSecret below - dev and kind only.
+  existingSecret: ""
+  secretKeys:
+    password: password
+    jwtSecret: jwt-secret
+  password: ""
+  jwtSecret: ""
+
+  # The instance's max_connections. db.t4g.micro has 1 GiB of memory and RDS
+  # derives roughly 112 from it. Recompute this if you resize the instance:
+  # the budget check below is only as good as this number.
+  maxConnections: 112
+
+# Install-time assertion, not documentation.
+#
+# Peak demand on Postgres is (peak pods x poolMaxSize), or, with pgbouncer in
+# front, (pgbouncer replicas x defaultPoolSize). If that plus the reserve
+# exceeds maxConnections, the install fails with the arithmetic printed.
+#
+# This is the lesson of the max 6 -> 10 experiment encoded as a guard: 10 tasks
+# x 10 connections = 100 of ~112, and throughput fell from 122.9 to 117.5 req/s
+# while the error rate went from 0.00% to 1.72%.
+connectionBudget:
+  enforce: true
+  # Superuser reserve (3), the migration Job's own connection, a psql session,
+  # and room for a rolling update's surge pod.
+  reserved: 12
+  # Percent of max_connections the application tier may demand at peak.
+  #
+  # 70 is not a round number picked for comfort: alarm_db_connections_threshold
+  # in the Terraform is 80 connections on a ~112 ceiling, which the runbook
+  # describes as firing "before the pool exhausts rather than after". Setting
+  # the chart's ceiling to the same line means a release that installs cannot
+  # reach a configuration that pages you.
+  #
+  # With the defaults this allows 7 pods and refuses 8 - and refuses the 10
+  # that the load test measured as a throughput regression.
+  utilizationTarget: 70
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 0
+  # Scale out fast, scale in slow - the same asymmetry as the ECS policies
+  # (scale_out_cooldown 60, scale_in_cooldown 300). A premature scale-in
+  # during a trough costs a cold start when traffic returns.
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 512Mi
+    # No CPU limit by default, deliberately. A CPU limit throttles the
+    # container, and a throttled pod reports lower CPU utilization, which is
+    # the exact signal the HPA scales on - you get a service that is slow and
+    # refuses to scale. Set this to 250m only if you need to reproduce the
+    # Fargate 0.25 vCPU ceiling for a comparison run.
+    # cpu: 250m
+
+# Probes encode the README's health check decision, which matters more here
+# than it did on ECS.
+#
+# /healthz never touches the database, so it is safe as a liveness probe: a
+# degraded database cannot make the kubelet restart every pod at once.
+# /readyz does query the database, so it is the readiness probe: a pod with no
+# database is removed from the Service's endpoints but is not killed.
+#
+# Wiring /readyz to liveness is the single most destructive thing you can do
+# to this chart - a slow database would become a cluster-wide crash loop.
+probes:
+  startup:
+    path: /healthz
+    periodSeconds: 2
+    failureThreshold: 30
+  liveness:
+    path: /healthz
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Matches the ALB target group's deregistration_delay of 30s: stop taking new
+# connections, drain the in-flight ones, then exit.
+terminationGracePeriodSeconds: 30
+preStopSleepSeconds: 5
+
+service:
+  type: ClusterIP
+  port: 80
+  # Only used with type NodePort. deploy/kind maps host:8080 to this, so k6
+  # drives the cluster through kube-proxy rather than through
+  # `kubectl port-forward` - a userspace proxy that saturates well below
+  # 100 VUs and would show up as application latency.
+  nodePort: null
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  path: /
+  pathType: Prefix
+
+# On EKS without the AWS Load Balancer Controller, this is the cheapest way to
+# get a public endpoint: an NLB from the in-tree cloud provider. The health
+# check path is /healthz, same target as the ALB used.
+loadBalancer:
+  enabled: false
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: /healthz
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: HTTP
+
+# Spread pods across zones, which is what desired_count = 2 bought on ECS.
+# ScheduleAnyway rather than DoNotSchedule so a single-zone cluster (kind, k3s)
+# still schedules.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  whenUnsatisfiable: ScheduleAnyway
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# The security group chain (0.0.0.0/0 -> alb-sg -> app-sg:8080 -> db-sg:5432)
+# translated. Off by default because kindnet does not enforce NetworkPolicy
+# and a policy that is silently ignored is worse than none.
+networkPolicy:
+  enabled: false
+  ingressNamespace: ingress-nginx
+  # Open Library, outbound through the NAT gateway on ECS.
+  allowExternalHTTPS: true
+
+# Migrations run as a Helm pre-install/pre-upgrade hook, which preserves the
+# property the ECS pipeline had: a failed migration aborts the release without
+# having replaced a single running pod. Pair it with
+# `helm upgrade --atomic --wait`.
+migrations:
+  enabled: true
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 300
+
+# PgBouncer in transaction mode - the fix docs/load-test.md names for the
+# connection ceiling. With it, pods multiply client connections against
+# pgbouncer rather than against Postgres, and maxReplicas stops being bounded
+# by max_connections.
+pgbouncer:
+  enabled: false
+  image:
+    repository: edoburu/pgbouncer
+    tag: "1.23.1-p2"
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 6432
+  poolMode: transaction
+  # What pgbouncer opens to Postgres, per replica. This is the number the
+  # connection budget checks when pgbouncer is enabled.
+  defaultPoolSize: 20
+  maxClientConn: 500
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+# Dev-only Postgres so `helm install` works on kind with nothing else set up.
+# Never enable this against anything you care about: storage is an emptyDir and
+# the data is gone when the pod restarts.
+devPostgres:
+  enabled: false
+  image:
+    repository: postgres
+    tag: "16-alpine"
+  password: devpassword
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}

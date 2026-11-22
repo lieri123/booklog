@@ -1,0 +1,79 @@
+{{- if .Values.pgbouncer.enabled }}
+# Transaction-mode pooling, the fix docs/load-test.md names for the connection
+# ceiling. Pods then multiply client connections against pgbouncer instead of
+# against Postgres, so autoscaling.maxReplicas stops being bounded by
+# max_connections.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "booklog.fullname" . }}-pgbouncer
+  labels:
+    {{- include "booklog.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.pgbouncer.port }}
+      targetPort: pgbouncer
+      name: pgbouncer
+  selector:
+    {{- include "booklog.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "booklog.fullname" . }}-pgbouncer
+  labels:
+    {{- include "booklog.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+spec:
+  replicas: {{ .Values.pgbouncer.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "booklog.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: pgbouncer
+  template:
+    metadata:
+      labels:
+        {{- include "booklog.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: pgbouncer
+    spec:
+      containers:
+        - name: pgbouncer
+          image: "{{ .Values.pgbouncer.image.repository }}:{{ .Values.pgbouncer.image.tag }}"
+          imagePullPolicy: {{ .Values.pgbouncer.image.pullPolicy }}
+          ports:
+            - name: pgbouncer
+              containerPort: {{ .Values.pgbouncer.port }}
+          env:
+            - name: DB_HOST
+              value: {{ include "booklog.postgresHost" . | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "booklog.secretName" . }}
+                  key: {{ .Values.database.secretKeys.password }}
+            - name: POOL_MODE
+              value: {{ .Values.pgbouncer.poolMode | quote }}
+            - name: DEFAULT_POOL_SIZE
+              value: {{ .Values.pgbouncer.defaultPoolSize | quote }}
+            - name: MAX_CLIENT_CONN
+              value: {{ .Values.pgbouncer.maxClientConn | quote }}
+            - name: AUTH_TYPE
+              value: scram-sha-256
+            - name: LISTEN_PORT
+              value: {{ .Values.pgbouncer.port | quote }}
+          readinessProbe:
+            tcpSocket:
+              port: pgbouncer
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.pgbouncer.resources | nindent 12 }}
+{{- end }}

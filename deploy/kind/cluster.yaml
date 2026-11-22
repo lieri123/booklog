@@ -1,0 +1,16 @@
+# Three nodes so the HPA has somewhere to put pods and topologySpread has
+# something to spread across. up.sh labels the workers with fake zones, which
+# makes the two-AZ property of the ECS deployment visible locally.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: booklog
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # host:8080 -> NodePort 30080. kube-proxy forwards from here to a pod on
+      # any node, so this one mapping survives rescheduling and scaling.
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+  - role: worker
+  - role: worker

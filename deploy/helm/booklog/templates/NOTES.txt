@@ -1,0 +1,41 @@
+{{ include "booklog.fullname" . }} release {{ .Release.Revision }} installed into {{ .Release.Namespace }}.
+
+Connection budget
+  {{ include "booklog.budgetReport" . }}
+{{- if not .Values.connectionBudget.enforce }}
+
+  WARNING: connectionBudget.enforce is false. The guard that keeps
+  autoscaling.maxReplicas inside the database's connection ceiling is off.
+{{- end }}
+
+Autoscaling
+{{- if .Values.autoscaling.enabled }}
+  {{ .Values.autoscaling.minReplicas }} to {{ .Values.autoscaling.maxReplicas }} pods, target {{ .Values.autoscaling.targetCPUUtilizationPercentage }}% average CPU.
+  The HPA needs metrics-server. Check it is reporting:
+
+    kubectl get hpa {{ include "booklog.fullname" . }} -n {{ .Release.Namespace }}
+
+  A TARGETS column of <unknown> means metrics-server is missing or not ready,
+  and the HPA will not scale.
+{{- else }}
+  Disabled. Fixed at {{ .Values.replicaCount }} replicas.
+{{- end }}
+
+Reach it
+{{- if .Values.loadBalancer.enabled }}
+    kubectl get svc {{ include "booklog.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+{{- else if .Values.ingress.enabled }}
+    http://{{ .Values.ingress.host | default "<ingress-host>" }}{{ .Values.ingress.path }}
+{{- else }}
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "booklog.fullname" . }} 8080:{{ .Values.service.port }}
+    curl localhost:8080/healthz
+{{- end }}
+
+Verify, then load test
+    helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+    bash scripts/smoke.sh http://localhost:8080
+    BASE_URL=http://localhost:8080 ./k6 run loadtest/load.js
+
+  Watch the HPA and latency together - scaling is only interesting next to the
+  percentiles it was supposed to protect:
+    bash deploy/scripts/watch-hpa.sh {{ .Release.Name }} {{ .Release.Namespace }}

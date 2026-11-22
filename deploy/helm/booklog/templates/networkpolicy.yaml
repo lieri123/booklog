@@ -1,0 +1,50 @@
+{{- if .Values.networkPolicy.enabled }}
+# The security group chain translated:
+#   0.0.0.0/0 -> alb-sg -> app-sg:8080 -> db-sg:5432
+# becomes ingress only from the ingress controller's namespace, and egress only
+# to DNS, Postgres, and (for the Open Library call on POST /library) 443.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "booklog.fullname" . }}
+  labels:
+    {{- include "booklog.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "booklog.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }}
+        # Same namespace, so `helm test` and an in-cluster k6 can reach it.
+        - podSelector: {}
+      ports:
+        - port: {{ .Values.app.port }}
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - ports:
+        - port: {{ .Values.database.port }}
+          protocol: TCP
+        {{- if .Values.pgbouncer.enabled }}
+        - port: {{ .Values.pgbouncer.port }}
+          protocol: TCP
+        {{- end }}
+    {{- if .Values.networkPolicy.allowExternalHTTPS }}
+    - ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
+{{- end }}

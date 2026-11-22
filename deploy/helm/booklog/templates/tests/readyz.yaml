@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "booklog.fullname" . }}-test-readyz
+  labels:
+    {{- include "booklog.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: curlimages/curl:8.11.0
+      # /readyz, not /healthz: a release is only good if the pods can reach
+      # the database, and /healthz would pass either way.
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -e
+          BASE="http://{{ include "booklog.fullname" . }}:{{ .Values.service.port }}"
+          curl -fsS "$BASE/readyz" | grep -q '"database":"ok"'
+          curl -fsS -o /dev/null -w 'healthz %{http_code}\n' "$BASE/healthz"
+          echo "ok"

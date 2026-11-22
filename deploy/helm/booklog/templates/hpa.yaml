@@ -1,0 +1,41 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "booklog.fullname" . }}
+  labels:
+    {{- include "booklog.labels" . | nindent 4 }}
+  annotations:
+    # maxReplicas is a connection-budget decision, not a cost decision.
+    # {{ include "booklog.budgetReport" . }}
+    booklog.dev/connection-budget: {{ include "booklog.budgetReport" . | quote }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "booklog.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+  # The ECS service also tracked ALBRequestCountPerTarget at 300, which caught
+  # the case CPU misses: pods blocked on the database show low CPU, long queues
+  # and no scale-out. There is no built-in Kubernetes equivalent - it needs
+  # requests-per-pod from Prometheus Adapter or the CloudWatch adapter as an
+  # External metric. See docs/kubernetes.md.
+  behavior:
+    {{- toYaml .Values.autoscaling.behavior | nindent 4 }}
+{{- end }}

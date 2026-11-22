@@ -1,0 +1,79 @@
+{{- if .Values.devPostgres.enabled }}
+# Dev only. Storage is an emptyDir: the data is gone when the pod restarts.
+# Enabled by deploy/kind/values-kind.yaml so `helm install` works on a laptop
+# with nothing else running.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "booklog.fullname" . }}-postgres
+  labels:
+    {{- include "booklog.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.database.port }}
+      targetPort: postgres
+      name: postgres
+  selector:
+    {{- include "booklog.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "booklog.fullname" . }}-postgres
+  labels:
+    {{- include "booklog.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "booklog.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        {{- include "booklog.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: database
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.devPostgres.image.repository }}:{{ .Values.devPostgres.image.tag }}"
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.database.user | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.database.name | quote }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.devPostgres.password | quote }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          # Keep max_connections at the RDS db.t4g.micro figure so the
+          # connection budget means the same thing locally as on AWS. Without
+          # this, Postgres defaults to 100 and a local run would hit a
+          # different ceiling than the one the chart enforces.
+          args:
+            - postgres
+            - -c
+            - max_connections={{ .Values.database.maxConnections }}
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.database.user | quote }}]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.devPostgres.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          emptyDir: {}
+{{- end }}
